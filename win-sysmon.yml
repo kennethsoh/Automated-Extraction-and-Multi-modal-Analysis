@@ -1,0 +1,32 @@
+    - name: Create and Run Sysmon 
+      hosts: SuperHard
+      gather_facts: yes
+      tasks:
+        - name: Setup sysmon service
+          block:
+              - name: Copy sysmon service zip
+                copy:
+                    src: /home/cdl/forensic/Sysmon.zip
+                    dest: C:\Users\vagrant
+
+              - name: Copy sysmon config file
+                copy:
+                    src: /home/cdl/forensic/sysmon_config.xml
+                    dest: C:\Users\vagrant
+
+          when: ansible_os_family == "Windows"
+
+        - name: Unzip sysmon service files
+          win_unzip:
+              src: C:\Users\vagrant\Sysmon.zip
+              dest: C:\Users\vagrant\
+          when: ansible_os_family == "Windows"
+
+        - name: Create sysmon as a service
+
+          win_command:
+              become: yes
+              become_method: runas
+              become_user: SYSTEM
+              cmd: sysmon -accepteula -i C:\Users\vagrant\sysmon_config.xml
+          when: ansible_os_family == "Windows"

@@ -1,0 +1,286 @@
+# Extract Network, Logs and Memory Dump
+- name: Extract Network Traffic, Logs
+  hosts: all
+  gather_facts: yes
+  become: yes
+  vars:
+    ansible_env:
+      HOME: "/home/cdl"
+    scenario: "{{ SCENARIO }}" 
+    env_path: "{{ ansible_env.HOME }}/cradle-main/assembler/bin/output/{{ scenario }}/Deployment_For_local/{{ scenario }}-experiment/localhost"
+
+  pre_tasks:
+    - name: Capture current date and time
+      set_fact:
+        current_date: "{{ lookup('pipe', 'date +%Y-%m-%d') }}"
+        current_time: "{{ lookup('pipe', 'date +%H%M') }}"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Set dataset directory
+      set_fact:
+        dataset_dir: "{{ ansible_env.HOME }}/dataset/{{ scenario }}/{{ current_date }}/{{ current_time }}"
+
+  tasks:
+    - name: Sanity Check
+      debug:
+        msg: "{{ group_names[0] }}, {{ ansible_hostname }}, {{ inventory_hostname }}, Current Time: {{ current_time }}"
+
+    - name: Create dataset directories
+      become: yes
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - "{{ dataset_dir }}/network"
+        - "{{ dataset_dir }}/logs"
+        - "{{ dataset_dir }}/memdump"
+      delegate_to: localhost
+
+    - name: Create tmp directories
+      become: no
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - "/tmp/memdump/{{ current_date }}/{{ current_time }}"
+      delegate_to: localhost
+
+      
+      # NETWORK
+    - name: Create network directories for hosts
+      become: yes
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - "{{ dataset_dir }}/network/{{ group_names[0] }}/"
+      delegate_to: localhost
+
+    - name: Extract network pcap (Windows)
+      block:
+        - name: Stop PKTMON Service
+          win_command: sc stop PktmonService
+          ignore_errors: true
+
+        - name: Find capture files (Windows)
+          win_find:
+            paths: C:\Users\vagrant
+            patterns: "capture.pcap"
+          register: capture_files
+
+        - name: Display found files
+          debug:
+            msg: "Found files: {{ capture_files.files | map(attribute='path') | list }}"
+
+        - name: Fetch capture.pcap (Windows)
+          become: yes
+          become_method: runas
+          become_user: Administrator
+          fetch:
+            src: "{{ item.path }}"
+            dest: "/tmp/network/{{ current_date }}/{{ current_time}}/{{ group_names[0] }}/"
+            flat: yes
+          loop: "{{ capture_files.files }}"
+          ignore_errors: true
+      when: ansible_os_family == "Windows"
+      vars:
+        ansible_become: no
+
+    - name: Restart PKTMON Service
+      win_command: sc start PktmonService
+      ignore_errors: true
+      when: ansible_os_family == "Windows"
+      vars:
+        ansible_become: no
+
+    - name: Extract network pcap (Linux)
+      block:
+        - name: Find capture files (Linux)
+          find:
+            paths: /home/vagrant/network
+            patterns: "capture_*.pcap"
+          register: capture_files
+
+        - name: Display found files
+          debug:
+            msg: "Found files: {{ capture_files.files | map(attribute='path') | list }}"
+
+        - name: Fetch capture files (Linux)
+          become: yes
+          fetch:
+            src: "{{ item.path }}"
+            dest: "/tmp/network/{{ current_date }}/{{ current_time}}/{{ group_names[0] }}/"
+            flat: yes
+          loop: "{{ capture_files.files }}"
+          ignore_errors: true
+
+      when: ansible_os_family != "Windows"
+
+
+      # LOGS
+    - name: Extract logs (Windows)
+      become: no
+      become_method: runas
+      become_user: SYSTEM
+      block:
+        - name: Create output file
+          win_file:
+            path: C:\Users\vagrant\Desktop\event_logs.txt
+            state: touch
+
+        - name: Run PowerShell script
+          script: extract_logs.ps1
+
+        - name: Stop Sysmon trace
+          win_command:
+            cmd: logman Stop SysmonTrace -ets
+
+        - name: Convert Sysmon trace to CSV format
+          win_command:
+            cmd: tracerpt C:\Users\vagrant\Desktop\sysmon_logs.etl -of CSV -o C:\Users\vagrant\Desktop\sysmon_logs.csv
+          ignore_errors: true
+
+        - name: Fetch event logs
+          fetch:
+            src: C:\Users\vagrant\Desktop\event_logs.txt
+            dest: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_system_logs.txt"
+            flat: yes
+          ignore_errors: true
+
+        - name: Fetch sysmon csv file
+          fetch:
+            src: C:\Users\vagrant\Desktop\sysmon_logs.csv
+            dest: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_sysmon_logs.csv"
+            flat: yes
+          ignore_errors: true
+
+        - name: Fetch sysmon etl file
+          fetch:
+            src: C:\Users\vagrant\Desktop\sysmon_logs.etl
+            dest: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_sysmon_logs.etl"
+            flat: yes
+          ignore_errors: true
+
+      when: ansible_os_family == "Windows"
+
+    - name: Extract logs (Linux)
+      block:
+        - name: Run log extraction script
+          script: extract_logs.sh
+
+        - name: Fetch system logs (Linux)
+          become: yes
+          fetch:
+            src: /home/vagrant/system_logs.txt
+            dest: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_system_logs.txt"
+            flat: yes
+          ignore_errors: true
+
+        - name: Clean up local environment (Linux)
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /home/vagrant/system_logs.txt
+            - /home/vagrant/audit.log
+      when: ansible_os_family != "Windows"
+
+- name: Copy to dataset directory
+  hosts: all
+  strategy: free
+  gather_facts: yes
+  become: yes
+  vars:
+    ansible_env:
+      HOME: "/home/cdl"
+    scenario: "{{ SCENARIO }}" 
+    env_path: "{{ ansible_env.HOME }}/cradle-main/assembler/bin/output/{{ scenario }}/Deployment_For_local/{{ scenario }}-experiment/localhost"
+
+  tasks:
+    - name: Copy system logs to dataset directory
+      become: yes
+      become_user: root
+      copy:
+        src: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_system_logs.txt"
+        dest: "{{ dataset_dir }}/logs/"
+      delegate_to: localhost
+
+    - name: Copy sysmon csv file to dataset directory
+      become: yes
+      become_user: root
+      copy:
+        src: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_sysmon_logs.csv"
+        dest: "{{ dataset_dir }}/logs/"
+      delegate_to: localhost
+      when: ansible_os_family == "Windows"
+
+    - name: Copy sysmon etl file to dataset directory
+      become: yes
+      become_user: root
+      copy:
+        src: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_sysmon_logs.etl"
+        dest: "{{ dataset_dir }}/logs/"
+      delegate_to: localhost
+      when: ansible_os_family == "Windows"
+
+    - name: Copy pcap files to dataset directory
+      become: yes
+      become_user: root
+      copy:
+        src: "/tmp/network/{{ current_date }}/{{ current_time}}/{{ group_names[0] }}/"
+        dest: "{{ dataset_dir }}/network/{{ group_names[0] }}/"
+      delegate_to: localhost
+
+    - name: Mergecap
+      become: yes
+      become_user: root
+      shell: "mergecap -w {{ dataset_dir }}/network/{{ group_names[0] }}_combined.pcap {{ dataset_dir }}/network/{{ group_names[0] }}/*.pcap "
+      delegate_to: localhost
+
+
+# MEMDUMP
+- name: Extract Memory Dump
+  hosts: all
+  strategy: free
+  gather_facts: yes
+  become: yes
+  vars:
+    ansible_env:
+      HOME: "/home/cdl"
+    scenario: "{{ SCENARIO }}" 
+    env_path: "{{ ansible_env.HOME }}/cradle-main/assembler/bin/output/{{ scenario }}/Deployment_For_local/{{ scenario }}-experiment/localhost"
+
+  tasks:
+    - name: Get VBox uuid
+      become: no
+      slurp:
+        src: "{{env_path}}/.vagrant/machines/{{ group_names[0] }}/virtualbox/id"
+      register: vbox_uuids
+      delegate_to: localhost
+
+    - name: Set VM UUID
+      become: no
+      set_fact:
+        vm_uuid: "{{ vbox_uuids.content |  b64decode }}"
+      delegate_to: localhost
+
+    - name: Debug vm_uuid_dict
+      become: no
+      debug:
+        msg: "{{ group_names[0] }} : {{ vm_uuid }}"
+      delegate_to: localhost
+
+    - name: dumpvmcore for each VM
+      become: no
+      shell:
+        cmd: "VBoxManage debugvm {{ vm_uuid }} dumpvmcore --filename /tmp/memdump/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}.elf"
+      delegate_to: localhost
+
+    - name: Copy memdump to dataset directory
+      become: yes
+      become_user: root
+      copy:
+        src: "/tmp/memdump/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}.elf"
+        dest: "{{ dataset_dir }}/memdump/"
+      delegate_to: localhost

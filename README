@@ -1,0 +1,44 @@
+This README file explains all the files in this forensic directory
+---
+1. Sysmon.zip
+- Downloaded from https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+- Need to check for supportability in terms of windows versions
+
+
+2. audit.rules
+- Consist of audit rules for use in auditd (on linux machines)
+
+3. extract_etl.ps1
+- Stop sysmon trace (started by win-sysmon config)
+- Generates ETL file for sysmon logs
+
+4. extract_logs (ps1 & sh)
+- Extract System, Application & Security logs from windows and linux respectively
+
+5. extraction.yml
+- Extraction playbook for Network Capture, Logs & Memdump
+- Note that copying of files from tmp dir to dataset dir and memdump is using "free" strategy. All other parts are "linear". This allows for faster execution on tasks that are not dependent on each other.
+
+6. full_truncate.yml
+- Truncate playbook for network & logs 
+
+7. truncate.yml
+- Truncate playbook for network traffic only
+
+8. sysmon_config.xml & sysmon_verbose_config.xml
+- Sysmon rules (similar to audit rules)
+
+9. linux_tcpdump.sh
+- Script file executed by tcpdump service
+
+10. tcpdump.service
+- Service file to persist running of tcpdump on linux machines
+
+11. win-sysmon.yml
+- Testing file for sysmon related events only
+
+12. winService & winService.zip
+- Binaries for PktmonService on windows machines.
+- Self contained. no dependency on dlls to be pre-installed
+
+

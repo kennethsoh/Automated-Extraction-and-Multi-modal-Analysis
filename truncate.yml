@@ -1,0 +1,49 @@
+# Truncate Network, Logs and Memory Dump
+- name: Truncate Extraction of Network Traffic and Logs
+  hosts: all
+  gather_facts: yes
+
+  tasks:
+    - name: Clear network capture and logs (Windows)
+      block:
+        - name: Stop PKTMON Service
+          win_command: sc stop PktmonService
+          ignore_errors: true
+
+        - name: Delete network files (etl)
+          win_file:
+            path: C:\Users\vagrant\capture.etl
+            state: absent
+
+        - name: Delete network files (pcap)
+          win_file:
+            path: C:\Users\vagrant\capture.pcap
+            state: absent
+
+      when: ansible_os_family == "Windows"
+      vars:
+        ansible_become: no
+        
+      always:
+        - name: Restart PKTMON Service
+          win_command: 'sc start PktmonService'
+          when: ansible_os_family == "Windows"
+          ignore_errors: true
+
+    - name: Clear network capture and logs (Linux)
+      become: yes
+      become_user: root
+      block:
+        - name: Delete capture files
+          file:
+            path: /home/vagrant/network
+            state: absent
+
+        - name: Recreate network folder
+          file:
+            path: /home/vagrant/network
+            state: directory
+
+
+      when: ansible_os_family != "Windows"
+
