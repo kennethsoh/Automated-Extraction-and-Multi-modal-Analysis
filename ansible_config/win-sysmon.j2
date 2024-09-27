@@ -1,0 +1,24 @@
+    - name: Copy sysmon.zip
+      copy:
+        src: /home/cdl/forensic/Sysmon.zip
+        dest: C:\Users\vagrant
+
+    - name: Copy sysmon_config.xml
+      copy:
+        src: /home/cdl/forensic/sysmon_config.xml
+        dest: C:\Users\vagrant
+
+    - name: Unzip sysmon service files
+      win_unzip:
+        src: C:\Users\vagrant\Sysmon.zip
+        dest: C:\Users\vagrant\
+
+    - name: Create sysmon as a service
+      win_command: 
+        cmd: 'sysmon -accepteula -i C:\Users\vagrant\sysmon_config.xml'
+      args:
+        chdir: 'C:\Users\vagrant'
+
+#    - name: Start trace for ETL file
+#      win_command:
+#        cmd: 'logman Start SysmonTrace -p Microsoft-Windows-Sysmon 0xFFFFFFFF 0xFF -ets -o "C:\Users\vagrant\Desktop\sysmon_logs.etl"'
