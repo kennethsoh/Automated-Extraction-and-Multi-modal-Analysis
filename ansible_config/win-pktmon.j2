@@ -1,0 +1,18 @@
+     - name: Copy PKTMON service zip
+      become: no
+      become_method: runas
+      become_user: Administrator
+      copy:
+        src: /home/cdl/forensic/winService.zip
+        dest: C:\Users\vagrant
+
+    - name: Unzip PKTMON service files
+      win_unzip:
+        src: C:\Users\vagrant\winService.zip
+        dest: C:\Users\vagrant\
+
+    - name: Create PKTMON as a service
+      win_command: sc create PktmonService binPath= "C:\Users\vagrant\winService\PktmonService.exe" start= auto
+
+    - name: Start PKTMON service
+      win_command: sc start PktmonService
