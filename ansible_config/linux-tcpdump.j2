@@ -1,0 +1,30 @@
+    # Create tcpdump-as-a-service
+    - name: Copy tcpdump-script-file
+      become: yes
+      become_user: root
+      copy:
+        src: /home/cdl/forensic/linux_tcpdump.sh
+        dest: /etc/systemd/system/linux_tcpdump.sh
+
+    - name: Change tcpdump-script-file-permsisions
+      become: yes
+      become_user: root
+      file:
+        path: /etc/systemd/system/linux_tcpdump.sh
+        mode: '771'
+    
+    - name: Create tcpdump-as-a-service
+      become: yes
+      become_user: root
+      copy:
+        src: /home/cdl/forensic/tcpdump.service
+        dest: /etc/systemd/system/tcpdump.service
+    
+    - name: Start tcpdump service
+      become: yes
+      become_user: root
+      service:
+        name: tcpdump
+        daemon_reload: yes
+        state: started
+        enabled: yes
