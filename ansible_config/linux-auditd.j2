@@ -1,0 +1,28 @@
+    # Install auditd
+    - name: Install auditd
+      become: yes
+      become_user: root
+      apt:
+      {%- raw %}
+        name: "{{ item }}"
+        state: present
+      loop:
+        - auditd
+      {%- endraw %}
+  
+    # Copy rules
+    - name: Copy rules
+      become: yes
+      become_user: root
+      copy:
+        src: /home/cdl/forensic/audit.rules
+        dest: /etc/audit/audit.rules
+    
+    # Enable auditd
+    - name: Enable auditd
+      become: yes
+      become_user: root
+      service:
+        name: auditd
+        state: started
+        enabled: yes
