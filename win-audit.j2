@@ -1,0 +1,19 @@
+    - name: Enable auditing for Account Logon
+      win_audit_policy_system:
+        category: Account Logon
+        audit_type: success, failure
+
+    - name: Enable auditing for Object Access
+      win_audit_policy_system:
+        category: Object Access
+        audit_type: success, failure
+
+    - name: Enable auditing for Policy Change
+      win_audit_policy_system:
+        category: Policy Change
+        audit_type: success, failure
+
+    - name: Enable auditing for Privilege Use
+      win_audit_policy_system:
+        category: Privilege Use
+        audit_type: success, failure
