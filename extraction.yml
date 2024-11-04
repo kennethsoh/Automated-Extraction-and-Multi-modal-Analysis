@@ -124,65 +124,83 @@
       become_method: runas
       become_user: SYSTEM
       block:
-        - name: Create output file
-          win_file:
-            path: C:\Users\vagrant\Desktop\event_logs.txt
-            state: touch
-
-        - name: Run PowerShell script
+        - name: Run Event Viewer Extraction PowerShell script
           script: extract_logs.ps1
-
-        - name: Stop Sysmon trace
-          win_command:
-            cmd: logman Stop SysmonTrace -ets
-
-        - name: Convert Sysmon trace to CSV format
-          win_command:
-            cmd: tracerpt C:\Users\vagrant\Desktop\sysmon_logs.etl -of CSV -o C:\Users\vagrant\Desktop\sysmon_logs.csv
           ignore_errors: true
 
-        - name: Fetch event logs
+        - name: Archive extracted Windows events (evtx files)
+          win_shell: Compress-Archive -Path C:\Logs -DestinationPath C:\Users\vagrant\Desktop\events_archive.zip
+    
+        - name: Fetch system logs (Windows)
           fetch:
-            src: C:\Users\vagrant\Desktop\event_logs.txt
-            dest: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_system_logs.txt"
+            src: C:\Users\vagrant\Desktop\events_archive.zip
+            dest: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_events_logs.zip"
             flat: yes
           ignore_errors: true
-
-        - name: Fetch sysmon csv file
-          fetch:
-            src: C:\Users\vagrant\Desktop\sysmon_logs.csv
-            dest: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_sysmon_logs.csv"
-            flat: yes
-          ignore_errors: true
-
-        - name: Fetch sysmon etl file
-          fetch:
-            src: C:\Users\vagrant\Desktop\sysmon_logs.etl
-            dest: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_sysmon_logs.etl"
-            flat: yes
-          ignore_errors: true
-
       when: ansible_os_family == "Windows"
-
+      
     - name: Extract logs (Linux)
       block:
-        - name: Run log extraction script
-          script: extract_logs.sh
+        - name: Stop sysdig service
+          become: yes
+          become_user: root
+          service:
+            name: sysdig
+            state: stopped
+          ignore_errors: true
+
+        - name: Installing zip
+          become: yes
+          become_user: root
+          apt:
+            name: zip
+            state: present
+            update_cache: yes
+
+        - name: Check if the sysdig.scap file exists
+          stat:
+            path: /var/log/sysdig.scap
+          register: sysdig_file
+          
+        - name: Zip the sysdig.scap file if it exists
+          command: zip -j /var/log/sysdig.zip /var/log/sysdig.scap
+          when: sysdig_file.stat.exists
+
+        - name: Remove the original sysdig.scap file
+          file:
+            path: /var/log/sysdig.scap
+            state: absent
+          when: sysdig_file.stat.exists
+            
+        - name: Archive all logs (Linux)
+          become: yes
+          become_user: root
+          shell: "zip -r /home/vagrant/system_logs.zip /var/log"
 
         - name: Fetch system logs (Linux)
           become: yes
+          become_user: root
           fetch:
-            src: /home/vagrant/system_logs.txt
-            dest: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_system_logs.txt"
+            src: /home/vagrant/system_logs.zip
+            dest: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_system_logs.zip"
             flat: yes
+
+        - name: Restart sysdig service
+          become: yes
+          become_user: root
+          service:
+            name: sysdig
+            state: restarted
           ignore_errors: true
 
         - name: Clean up local environment (Linux)
+          become: yes
+          become_user: root
           file:
             path: "{{ item }}"
             state: absent
           loop:
-            - /home/vagrant/system_logs.txt
+            - /home/vagrant/system_logs.zip
             - /home/vagrant/audit.log
       when: ansible_os_family != "Windows"
 
@@ -198,32 +216,24 @@
     env_path: "{{ ansible_env.HOME }}/cradle-main/assembler/bin/output/{{ scenario }}/Deployment_For_local/{{ scenario }}-experiment/localhost"
 
   tasks:
-    - name: Copy system logs to dataset directory
+    - name: Copy system logs to dataset directory (Windows)
       become: yes
       become_user: root
       copy:
-        src: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_system_logs.txt"
-        dest: "{{ dataset_dir }}/logs/"
-      delegate_to: localhost
-
-    - name: Copy sysmon csv file to dataset directory
-      become: yes
-      become_user: root
-      copy:
-        src: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_sysmon_logs.csv"
+        src: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_events_logs.zip"
         dest: "{{ dataset_dir }}/logs/"
       delegate_to: localhost
       when: ansible_os_family == "Windows"
 
-    - name: Copy sysmon etl file to dataset directory
+    - name: Copy system logs to dataset directory (Linux)
       become: yes
       become_user: root
       copy:
-        src: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_sysmon_logs.etl"
+        src: "/tmp/logs/{{ current_date }}/{{ current_time }}/{{ group_names[0] }}_system_logs.zip"
         dest: "{{ dataset_dir }}/logs/"
       delegate_to: localhost
-      when: ansible_os_family == "Windows"
-
+      when: ansible_os_family != "Windows"
+      
     - name: Copy pcap files to dataset directory
       become: yes
       become_user: root
